@@ -36,6 +36,24 @@ We are looking out for the following aspects in your submission:
 
 That being said it is not enough to "just make it work", show your full potential to write excellent software
  for Crewmeister ! 
+
+## AI Usage Guidelines
+ 
+We encourage you to use AI tools if that reflects your normal development workflow. However, **we expect transparency** in how you use these tools.
+ 
+**Required Documentation:**
+  - Create an `AI_USAGE.md` file that includes:
+    - Which AI tools you used (e.g., ChatGPT, Claude, GitHub Copilot)
+    - Key prompts/questions you asked
+    - Relevant AI responses that shaped your solution
+    - Your reasoning for accepting, modifying, or rejecting AI suggestions
+ 
+**What We're Looking For:**
+  - Understanding of the code you submit (AI-assisted or not)
+  - Thoughtful use of AI as a development tool
+  - Your own problem-solving and decision-making process
+ 
+Simply asking an AI to "build the entire application" and submitting that output will not demonstrate your skills effectively.
  
 ## Setup
 #### Requirements
