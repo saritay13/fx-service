@@ -57,13 +57,13 @@ Simply asking an AI to "build the entire application" and submitting that output
  
 ## Setup
 #### Requirements
-- Java 11 (will run with OpenSDK 15 as well)
+- Java 21
 - Maven 3.x
 
 #### Project
 The project was generated through the Spring initializer [1] for Java
- 11 with dev tools and Spring Web as dependencies. In order to build and 
- run it, you just need to click the green arrow in the Application class in your Intellij 
+ 21 with Spring Boot 3.2.2, dev tools and Spring Web as dependencies. In order to build and
+ run it, you just need to click the green arrow in the Application class in your Intellij
  CE IDE or run the following command from your project root und Linux or ios. 
 
 ````shell script
