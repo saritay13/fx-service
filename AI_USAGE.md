@@ -104,7 +104,7 @@ curl -H "Accept: application/vnd.sdmx.data+json;version=1.0.0" \
 ```
 
 This returns only metadata, minimizing payload size. Below is sample response
-![img_1.png](img_1.png)
+![GET_ALL_AVAILABLE_CCY_JSON.png](GET_ALL_AVAILABLE_CCY_JSON.png)
 ---
 
 
