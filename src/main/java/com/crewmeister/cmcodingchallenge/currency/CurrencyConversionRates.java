@@ -1,17 +1,19 @@
 package com.crewmeister.cmcodingchallenge.currency;
 
-public class CurrencyConversionRates {
-    private double conversionRate;
+import java.math.BigDecimal;
 
-    public CurrencyConversionRates(double conversionRate) {
+public class CurrencyConversionRates {
+    private BigDecimal conversionRate;
+
+    public CurrencyConversionRates(BigDecimal conversionRate) {
         this.conversionRate = conversionRate;
     }
 
-    public double getConversionRate() {
+    public BigDecimal getConversionRate() {
         return conversionRate;
     }
 
-    public void setConversionRate(double conversionRate) {
+    public void setConversionRate(BigDecimal conversionRate) {
         this.conversionRate = conversionRate;
     }
 }

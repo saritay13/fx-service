@@ -1,5 +1,6 @@
 package com.crewmeister.cmcodingchallenge.service;
 
+import com.crewmeister.cmcodingchallenge.cache.CurrencyCache;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
