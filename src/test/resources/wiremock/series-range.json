@@ -1,0 +1,29 @@
+{
+  "data": {
+    "structure": {
+      "dimensions": {
+        "observation": [
+          {
+            "id": "TIME_PERIOD",
+            "values": [
+              { "id": "{{d0}}" },
+              { "id": "{{d1}}" }
+            ]
+          }
+        ]
+      }
+    },
+    "dataSets": [
+      {
+        "series": {
+          "0:0:0:0:0:0": {
+            "observations": {
+              "0": ["{{r0}}", 1],
+              "1": ["{{r1}}", 1]
+            }
+          }
+        }
+      }
+    ]
+  }
+}

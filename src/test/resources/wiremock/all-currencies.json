@@ -1,0 +1,27 @@
+{
+  "data": {
+    "structure": {
+      "dimensions": {
+        "series": [
+          {
+            "id": "BBK_STD_FREQ",
+            "values": [{ "id": "D" }]
+          },
+          {
+            "id": "BBK_STD_CURRENCY",
+            "values": [
+              { "id": "USD" },
+              { "id": "GBP" },
+              { "id": "JPY" },
+              { "id": "CHF" }
+            ]
+          },
+          {
+            "id": "BBK_ERX_PARTNER_CURRENCY",
+            "values": [{ "id": "EUR" }]
+          }
+        ]
+      }
+    }
+  }
+}
