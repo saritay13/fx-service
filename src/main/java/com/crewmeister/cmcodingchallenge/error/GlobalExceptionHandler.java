@@ -1,15 +1,17 @@
 package com.crewmeister.cmcodingchallenge.error;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
-import java.time.Instant;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -21,16 +23,6 @@ public class GlobalExceptionHandler {
        return build(HttpStatus.SERVICE_UNAVAILABLE, "Upstream service error", ex.getMessage(), request.getRequestURI());
     }
 
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiError> handleGeneric(Exception ex, HttpServletRequest request) {
-        LOGGER.error("Internal server error Unexpected error occurred method={}, uri={}",
-                request.getMethod(),
-                request.getRequestURI(),
-                ex);
-        return build(HttpStatus.INTERNAL_SERVER_ERROR, "Internal server error",
-                "Unexpected error occurred", request.getRequestURI());
-    }
-
     @ExceptionHandler(RateNotFoundException.class)
     public ResponseEntity<ApiError> handleRateNotFoundExcetion(RateNotFoundException ex, HttpServletRequest request){
         return build(HttpStatus.NOT_FOUND, "Rate not found", ex.getMessage(), request.getRequestURI());
@@ -39,6 +31,32 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(InvalidRequestException.class)
     public ResponseEntity<ApiError> handleInvalidRequestException(InvalidRequestException ex, HttpServletRequest request){
         return build(HttpStatus.BAD_REQUEST, "Invalid request", ex.getMessage(), request.getRequestURI());
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ApiError> handleConstraintViolation(ConstraintViolationException ex, HttpServletRequest req) {
+        return build(HttpStatus.BAD_REQUEST, "Field Validation failed", ex.getMessage(), req.getRequestURI());
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiError> handleTypeMismatch(MethodArgumentTypeMismatchException ex, HttpServletRequest req) {
+        return build(HttpStatus.BAD_REQUEST, "Field Validation failed", ex.getMessage(), req.getRequestURI());
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ApiError> handleArgumentNotValidException(MethodArgumentNotValidException ex, HttpServletRequest req) {
+        return build(HttpStatus.BAD_REQUEST, "Field Validation failed", ex.getMessage(), req.getRequestURI());
+    }
+
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiError> handleGeneric(Exception ex, HttpServletRequest request) {
+        LOGGER.error("Internal server error Unexpected error occurred method={}, uri={}",
+                request.getMethod(),
+                request.getRequestURI(),
+                ex);
+        return build(HttpStatus.INTERNAL_SERVER_ERROR, "Internal server error",
+                "Unexpected error occurred", request.getRequestURI());
     }
 
     private ResponseEntity<ApiError> build(HttpStatus status, String error, String message, String path) {
