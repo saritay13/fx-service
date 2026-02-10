@@ -74,8 +74,7 @@ I normalized the SDMX response into a clean internal model:
   "date": "2024-01-15",
   "baseCurrency": "EUR",
   "foreignCurrency": "USD",
-  "rate": 1.0945,
-  "source": "ECB via Deutsche Bundesbank" 
+  "rate": 1.0945
 }
 ```
 
@@ -92,20 +91,110 @@ Assess my approach: cache → API on miss → extract currency codes → return 
 - Database-backed cache (production-grade)
 
 ### Final Decision
-I chose **in-memory caching** for simplicity:
-- Currency lists change infrequently
-- No persistence required for the assignment
-- Keeps the solution minimal and readable
+I chose **in-memory caching** for simplicity
 
-### Endpoint Used
+### Endpoint Used 
 ```
 curl -H "Accept: application/vnd.sdmx.data+json;version=1.0.0" \
 "https://api.statistiken.bundesbank.de/rest/data/BBEX3/D..EUR.BB.AC.000?detail=serieskeyonly"
 ```
+- using serieskeyonly returns only metadata, minimized payload size.
+- Below is sample response from Bundesbank for data parsing clarity
 
-This returns only metadata, minimizing payload size. Below is sample response
 ![GET_ALL_AVAILABLE_CCY_JSON.png](GET_ALL_AVAILABLE_CCY_JSON.png)
 ---
+
+
+---
+
+## 3. Getting Rates on particular Date
+
+- Same as above
+ - For simplicity, Uses an in-memory cache keyed by (currency, date) to avoid repeated calls to the Bundesbank API.
+ - For production, a persistent store combined with caching would be preferred to ensure durability and scalability.
+
+- sample response from Bundesbank
+
+![GetARatePerDate.png](GetARatePerDate.png)
+
+---
+
+---
+## 4. To Get Rates at all dates for a currency
+- ### Prompt:
+  Retrieve all exchange rates for a given currency across available dates while:
+- Preventing excessive memory usage
+- Avoiding large response payloads
+- Ensuring reasonable response times
+
+### Options Considered
+1. Restrict data using a date range  
+   Example: all USD rates for 2024 only.
+
+2. Restrict number of observations  
+   Bundesbank supports:
+    - `firstNObservations` (earliest values)
+    - `lastNObservations` (most recent values)
+
+3. Background backfill into a database, then paginate from the database.
+
+4. Server-side pagination by time windows  
+   (e.g., monthly slices), since SDMX does not support offset-based pagination.
+
+### Data Volume Considerations
+- 1 currency, 1 year ≈ ~250 observations (business days)
+- 1 currency, 25 years ≈ ~6,000–7,000 observations
+- All currencies × all dates can result in large, multi-MB responses
+
+**Decision:**  
+Limit requests to a maximum of **5 years**, keeping responses under ~5–10 MB and avoiding timeouts or memory spikes.
+
+### Example External API Call
+
+```bash
+curl -H "Accept: application/vnd.sdmx.data+json;version=1.0.0" \
+"https://api.statistiken.bundesbank.de/rest/data/BBEX3/D.USD.EUR.BB.AC.000?detail=dataonly&lastNObservations=365"
+```
+
+#### Sample Response
+
+![GetByRange.png](GetByRange.png)
+
+### Final Decision
+- For this challenge:
+    - Support optional date range parameters.
+    - If no range is provided, default to recent data using `lastNObservations`.
+    - Enforce a maximum window to prevent excessive memory usage.
+  
+If `start` and `end` are not provided:
+- Default to a reasonable recent window (e.g., last 30–90 days).
+- Enforce a maximum range of **5 years**, which can be configurable as per the system requirements.
+---
+
+## 6. Use of AI Assistance
+
+Apart from designing the APIs, AI prompts were actively used during development to:
+- Generate and refine unit and integration test cases
+- Explicitly focus on:
+    - Edge cases and boundary conditions
+    - Memory usage considerations
+    - Exception handling scenarios
+    - Potential race conditions in caching and concurrent access
+
+The prompts were intentionally framed to guide the AI toward **production-like and defensive coding practices.**
+
+### Future Enhancements
+While the current implementation meets the functional and non-functional requirements of this challenge, 
+there is **significant scope for refactoring and hardening**, including but not limited to:
+
+- Improved cache eviction strategies
+- Better abstraction and separation of concerns
+- More comprehensive error classification
+- Externalize error messages into shared constants
+- Add unit tests for individual components (cache, client, services)
+- Persist FX rates in a database (e.g., PostgreSQL)
+- Add pagination for large time-series responses
+- Introduce retry & timeout logic for Bundesbank API calls
 
 
 
