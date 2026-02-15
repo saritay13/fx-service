@@ -1,4 +1,4 @@
-package com.crewmeister.cmcodingchallenge.domain;
+package com.crewmeister.cmcodingchallenge.dto;
 
 import java.time.LocalDate;
 

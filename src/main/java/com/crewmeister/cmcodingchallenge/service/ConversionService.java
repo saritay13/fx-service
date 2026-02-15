@@ -1,8 +1,8 @@
 package com.crewmeister.cmcodingchallenge.service;
 
 import com.crewmeister.cmcodingchallenge.currency.CurrencyConversionRates;
-import com.crewmeister.cmcodingchallenge.domain.FxRate;
 import com.crewmeister.cmcodingchallenge.dto.ConversionResponse;
+import com.crewmeister.cmcodingchallenge.dto.FxRate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -23,7 +23,7 @@ public class ConversionService {
 
     private CurrencyConversionRates getEurFxRates(String currency, LocalDate date) {
         LOGGER.info("Fetching Rates for {} at {} ", currency, date);
-        FxRate fxRate = fxRateService.getEurFxRate(currency, date);
+        FxRate fxRate = fxRateService.getEurFxRatePerDate(currency, date);
         return new CurrencyConversionRates(fxRate.rate());
     }
 

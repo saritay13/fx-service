@@ -2,6 +2,14 @@
   "data": {
     "structure": {
       "dimensions": {
+        "series": [
+          { "id": "BBK_STD_FREQ", "values": [ { "id": "D" } ] },
+          { "id": "BBK_STD_CURRENCY", "values": [ { "id": "USD" }, { "id": "GBP" } ] },
+          { "id": "BBK_ERX_PARTNER_CURRENCY", "values": [ { "id": "EUR" } ] },
+          { "id": "BBK_ERX_SERIES_TYPE", "values": [ { "id": "BB" } ] },
+          { "id": "BBK_ERX_RATE_TYPE", "values": [ { "id": "AC" } ] },
+          { "id": "BBK_ERX_SUFFIX", "values": [ { "id": "000" } ] }
+        ],
         "observation": [
           {
             "id": "TIME_PERIOD",
@@ -16,6 +24,9 @@
       {
         "series": {
           "0:0:0:0:0:0": {
+            "observations": {}
+          },
+          "0:1:0:0:0:0": {
             "observations": {}
           }
         }

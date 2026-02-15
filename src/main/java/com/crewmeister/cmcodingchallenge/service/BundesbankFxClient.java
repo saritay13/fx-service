@@ -1,5 +1,6 @@
 package com.crewmeister.cmcodingchallenge.service;
 
+import com.crewmeister.cmcodingchallenge.dto.FxRate;
 import com.crewmeister.cmcodingchallenge.dto.FxRatePoint;
 import com.crewmeister.cmcodingchallenge.error.RateNotFoundException;
 import com.crewmeister.cmcodingchallenge.error.UpstreamServiceException;
@@ -13,14 +14,15 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
+import javax.swing.text.html.Option;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.Iterator;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 import static com.crewmeister.cmcodingchallenge.constants.BundesbankClientConstants.*;
+import static com.crewmeister.cmcodingchallenge.service.FxRateService.EUR;
 
 @Component
 public class BundesbankFxClient {
@@ -59,7 +61,7 @@ public class BundesbankFxClient {
         }
     }
 
-    public BigDecimal fetchEurFxRateOnParticularDay(String currency, LocalDate date) {
+    public Optional<BigDecimal> fetchEurFxRateOnParticularDay(String currency, LocalDate date) {
         String path = GET_ALL_CURRENCY_PATH.formatted(currency);
 
         try {
@@ -79,7 +81,7 @@ public class BundesbankFxClient {
                 throw new UpstreamServiceException(BUNDESBANK_EMPTY_RESPONSE);
             }
 
-            BigDecimal rate = extractCurrencyRateFromSdmx(json, currency, date);
+            Optional<BigDecimal> rate = extractCurrencyRateFromSdmx(json, currency, date);
             LOGGER.info("Bundesbank EUR-FX rate fetched (currency={}, date={}, rate={})", currency, date, rate);
             return rate;
 
@@ -94,8 +96,44 @@ public class BundesbankFxClient {
         }
     }
 
-    public List<FxRatePoint> fetchEurFxSeriesByRange(String currency, LocalDate start, LocalDate end) {
-        String path = GET_ALL_CURRENCY_PATH.formatted(currency);
+    public Map<String, Optional<BigDecimal>> fetchAllEurFxRateOnParticularDay(LocalDate date) {
+        String path = GET_ALL_CURRENCY_PATH.formatted("");
+
+        try {
+            LOGGER.info("Fetching EUR-FX rate from Bundesbank ( date={})",  date);
+
+            String json = restClient.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path(path)
+                            .queryParam(START_PERIOD, date)
+                            .queryParam(END_PERIOD, date)
+                            .queryParam(DETAIL_PARAM, DATA_ONLY)
+                            .build())
+                    .accept(MediaType.parseMediaType(SDMX_MEDIA_TYPE))
+                    .retrieve()
+                    .body(String.class);
+
+            if (json == null || json.isBlank()) {
+                throw new UpstreamServiceException(BUNDESBANK_EMPTY_RESPONSE);
+            }
+
+            Map<String, Optional<BigDecimal>> rates = extractAllCurrencyRatesFromSdmxOneDay(json, date);
+            LOGGER.info("Bundesbank EUR-FX rate fetched (date={}, total rates={})",  date, rates.size());
+            return rates;
+
+        } catch (RestClientResponseException ex) {
+            LOGGER.error("Bundesbank HTTP error (status={}, date={})",
+                    ex.getRawStatusCode(), date, ex);
+            throw new UpstreamServiceException("Bundesbank API returned HTTP " + ex.getRawStatusCode(), ex);
+
+        } catch (RestClientException ex) {
+            LOGGER.error("Bundesbank network/client error (date={})", date, ex);
+            throw new UpstreamServiceException("Failed to call Bundesbank API", ex);
+        }
+    }
+
+    public Map<LocalDate, Map<String, Optional<BigDecimal>>> fetchEurFxSeriesByRange(LocalDate start, LocalDate end) {
+        String path = GET_ALL_CURRENCY_PATH.formatted("");
         try {
             String json = restClient.get()
                     .uri(uriBuilder -> uriBuilder
@@ -113,96 +151,13 @@ public class BundesbankFxClient {
                 throw new UpstreamServiceException(BUNDESBANK_EMPTY_RESPONSE);
             }
 
-            return extractFxRatePoints(json);
+            return extractAllCurrencyRatesFromSdmxAllDay(json);
         }catch (RestClientException ex) {
-            LOGGER.error("Bundesbank network/client error (currency={}, start={}, end={} )", currency, start,end,  ex);
+            LOGGER.error("Bundesbank network/client error (currency={}, start={}, end={} )", start,end,  ex);
             throw new UpstreamServiceException("Failed to call Bundesbank API", ex);
         }
 
     }
-
-
-    public List<FxRatePoint> fetchEurFxSeriesLastN(String currency, int lastN) {
-        String path = GET_ALL_CURRENCY_PATH.formatted(currency);
-        try {
-            String json = restClient.get()
-                    .uri(uriBuilder -> uriBuilder
-                            .path(path)
-                            .queryParam(LAST_N_OBSERVATIONS, lastN)
-                            .queryParam(DETAIL_PARAM, DATA_ONLY)
-                            .build())
-                    .accept(MediaType.parseMediaType(SDMX_MEDIA_TYPE))
-                    .retrieve()
-                    .body(String.class);
-
-            if (json == null || json.isBlank()) {
-                LOGGER.error("Bundesbank empty JSON");
-                throw new UpstreamServiceException("Bundesbank response was empty");
-            }
-
-            return extractFxRatePoints(json);
-        }catch (RestClientException ex) {
-            LOGGER.error("Bundesbank network/client error (currency={},lastN= {} )", currency, lastN,  ex);
-            throw new UpstreamServiceException("Failed to call Bundesbank API", ex);
-        }
-    }
-
-    private List<FxRatePoint> extractFxRatePoints(String json) {
-        try {
-            JsonNode root = objectMapper.readTree(json);
-
-            JsonNode timeValues = root.path(DATA_TAG)
-                    .path(STRUCTURE_TAG)
-                    .path(DIMENSIONS_TAG)
-                    .path(OBSERVATION_TAG)
-                    .path(0)
-                    .path(VALUES_TAG);
-
-            List<LocalDate> dates = new ArrayList<>();
-            if (timeValues.isArray()) {
-                for (JsonNode tv : timeValues) {
-                    String d = tv.path(ID_TAG).asText(null);
-                    if (d != null) {
-                        dates.add(LocalDate.parse(d));
-                    }
-                }
-            }
-            JsonNode seriesNode = root.path(DATA_TAG)
-                    .path(DATA_SETS_TAG).path(0)
-                    .path(SERIES_TAG);
-
-            String firstSeriesKey = seriesNode.fieldNames().hasNext() ? seriesNode.fieldNames().next() : null;
-            if (firstSeriesKey == null) {
-                return List.of();
-            }
-
-            JsonNode observations = seriesNode.path(firstSeriesKey).path("observations");
-            if (!observations.isObject()) {
-                return List.of();
-            }
-
-            List<FxRatePoint> fxRatePoints = new ArrayList<>();
-            Iterator<String> observationKeys = observations.fieldNames();
-            while (observationKeys.hasNext()) {
-                String idxStr = observationKeys.next();
-                int idx = Integer.parseInt(idxStr);
-
-                String rateStr = observations.path(idxStr).path(0).asText(null);
-                if (rateStr == null || idx >= dates.size()) {
-                    continue;
-                }
-
-                fxRatePoints.add(new FxRatePoint(dates.get(idx), new BigDecimal(rateStr)));
-            }
-
-            fxRatePoints.sort(Comparator.comparing(FxRatePoint::date));
-            return List.copyOf(fxRatePoints);
-
-        } catch (Exception e) {
-            throw new UpstreamServiceException("Failed to parse SDMX series response", e);
-        }
-    }
-
 
     private List<String> extractCurrenciesFromSdmx(String json) {
         try {
@@ -239,11 +194,12 @@ public class BundesbankFxClient {
             throw new UpstreamServiceException("Currency dimension BBK_STD_CURRENCY not found in SDMX response");
 
         } catch (Exception e) {
+            LOGGER.error(e.getMessage());
             throw new UpstreamServiceException("Failed to parse SDMX currencies", e);
         }
     }
 
-    private BigDecimal extractCurrencyRateFromSdmx(String json, String currency, LocalDate date) {
+    private Optional<BigDecimal> extractCurrencyRateFromSdmx(String json, String currency, LocalDate date) {
         try {
             JsonNode root = objectMapper.readTree(json);
 
@@ -257,34 +213,256 @@ public class BundesbankFxClient {
 
             String firstSeriesKey = seriesNode.fieldNames().hasNext() ? seriesNode.fieldNames().next() : null;
             if (firstSeriesKey == null) {
-                throw new RateNotFoundException("Rate not available for " + currency + " on " + date);
+                return Optional.empty();
+                //throw new RateNotFoundException("Rate not available for " + currency + " on " + date);
             }
 
             JsonNode observations = seriesNode.path(firstSeriesKey).path("observations");
             if (!observations.isObject()) {
+                //return Optional.empty();
                 throw new UpstreamServiceException("Unexpected SDMX structure: observations missing");
             }
 
 
             String firstObservationKey = observations.fieldNames().hasNext() ? observations.fieldNames().next() : null;
             if (firstObservationKey == null) {
-                throw new RateNotFoundException("Rate not available for " + currency + " on " + date);
+                return  Optional.empty();
+                //throw new RateNotFoundException("Rate not available for " + currency + " on " + date);
             }
 
             JsonNode observationList = observations.path(firstObservationKey);
 
             String rateAsString = observationList.path(0).asText(null);
             if (rateAsString == null || rateAsString.isBlank()) {
-                throw new RateNotFoundException("Rate not available for " + currency + " on " + date);
+                return Optional.empty();
+                //throw new RateNotFoundException("Rate not available for " + currency + " on " + date);
             }
 
-            return new BigDecimal(rateAsString);
+            return Optional.of(new BigDecimal(rateAsString));
 
         } catch (RateNotFoundException e) {
-            throw e;
+            return Optional.empty();
+            //throw e;
         } catch (Exception e) {
-            throw new UpstreamServiceException("Failed to parse SDMX rate response", e);
+            LOGGER.error(e.getMessage());
+            //return Optional.empty();
+            throw new UpstreamServiceException("Failed to parse SDMX rate response for currency " + currency, e);
         }
+    }
+
+    private Map<String, Optional<BigDecimal>> extractAllCurrencyRatesFromSdmxOneDay(String json, LocalDate date) {
+        try {
+            JsonNode root = objectMapper.readTree(json);
+
+            // 1) Extract dates (should be a single entry because start=end)
+            List<LocalDate> dates = extractDates(root);
+            if (dates.isEmpty() || !dates.get(0).equals(date)) {
+                // If Bundesbank returns different/empty date list, treat as no data (not fatal)
+                return Map.of();
+            }
+
+            List<String> currencyDimInfo = extractCurrencyDimInfo(root);
+            if (currencyDimInfo.isEmpty()) {
+                throw new UpstreamServiceException("Unexpected SDMX structure: currency series dimension missing");
+            }
+
+            // 3) Read series object (contains many series keys for wildcard)
+            JsonNode seriesNode = root.path("data")
+                    .path("dataSets").path(0)
+                    .path("series");
+
+            if (!seriesNode.isObject()) {
+                throw new UpstreamServiceException("Unexpected SDMX structure: dataSets[0].series missing");
+            }
+
+            // 4) Prepare a result map: currency -> Optional(rate)
+            // We include every currency code we discovered, defaulting to Optional.empty().
+            Map<String, Optional<BigDecimal>> result = new HashMap<>();
+            currencyDimInfo.forEach(ccy -> result.put(ccy, Optional.empty()));
+
+            // 5) Iterate each series entry and fill the result
+            Iterator<String> seriesKeys = seriesNode.fieldNames();
+            int idx = 0;
+            while (seriesKeys.hasNext()) {
+                String seriesKey = seriesKeys.next();
+
+                String currency = resolveCurrencyFromSeriesKey(idx, currencyDimInfo);
+                idx++;
+                if (currency == null) continue;
+
+                JsonNode observations = seriesNode.path(seriesKey).path("observations");
+                if (!observations.isObject()) {
+                    continue;
+                }
+
+                // One day => observation index "0"
+                JsonNode obs0 = observations.path("0");
+                String rateStr = obs0.path(0).asText(null);
+                if (rateStr == null || rateStr.isBlank()) {
+                    continue;
+                }
+
+                try {
+                    result.put(currency, Optional.of(new BigDecimal(rateStr)));
+                } catch (NumberFormatException ignored) {
+                    // keep empty if the rate is not a valid decimal
+                }
+            }
+            return result.entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .collect(java.util.stream.Collectors.toMap(
+                            Map.Entry::getKey,
+                            Map.Entry::getValue,
+                            (a, b) -> a,
+                            java.util.LinkedHashMap::new
+                    ));
+
+        } catch (Exception e) {
+            LOGGER.error("Failed to parse SDMX one-day wildcard response for date {}", date, e);
+            throw new UpstreamServiceException("Failed to parse SDMX one-day response", e);
+        }
+    }
+
+    private Map<LocalDate, Map<String, Optional<BigDecimal>>> extractAllCurrencyRatesFromSdmxAllDay(String json) {
+        try {
+            JsonNode root = objectMapper.readTree(json);
+
+            List<LocalDate> dates = extractDates(root);
+            if (dates.isEmpty()) {
+                return Map.of();
+            }
+
+            List<String> currencyDimInfo = extractCurrencyDimInfo(root);
+            if (currencyDimInfo.isEmpty()) {
+                throw new UpstreamServiceException("Unexpected SDMX structure: currency series dimension missing");
+            }
+
+            // 3) Read series object (contains many series keys for wildcard)
+            JsonNode seriesNode = root.path("data")
+                    .path("dataSets").path(0)
+                    .path("series");
+
+            if (!seriesNode.isObject()) {
+                throw new UpstreamServiceException("Unexpected SDMX structure: dataSets[0].series missing");
+            }
+
+            // 4) Prepare a result map: currency -> Optional(rate)
+            // We include every currency code we discovered, defaulting to Optional.empty().
+            Map<LocalDate, Map<String, Optional<BigDecimal>>> result = new LinkedHashMap<>();
+            for (LocalDate d : dates) {
+                Map<String, Optional<BigDecimal>> perDate = new LinkedHashMap<>();
+                for (String ccy : currencyDimInfo) {
+                    perDate.put(ccy, Optional.empty());
+                }
+                result.put(d, perDate);
+            }
+
+            // 5) Iterate each series entry and fill the result
+            Iterator<String> seriesKeys = seriesNode.fieldNames();
+            int idx = 0;
+            int dateIdx=0;
+            while (seriesKeys.hasNext()) {
+                String seriesKey = seriesKeys.next();
+
+                String currency = resolveCurrencyFromSeriesKey(idx, currencyDimInfo);
+                idx++;
+                if (currency == null) continue;
+
+                JsonNode observations = seriesNode.path(seriesKey).path("observations");
+                if (!observations.isObject()) {
+                    continue;
+                }
+
+                Iterator<String> obsKeys = observations.fieldNames();
+                while (obsKeys.hasNext()) {
+                    String idxStr = obsKeys.next();
+
+                    try {
+                        dateIdx = Integer.parseInt(idxStr);
+                    } catch (NumberFormatException ex) {
+                        continue;
+                    }
+                    if (dateIdx < 0 || dateIdx >= dates.size()) {
+                        continue;
+                    }
+
+                    String rateStr = observations.path(idxStr).path(0).asText(null);
+                    if (rateStr == null || rateStr.isBlank()) {
+                        continue;
+                    }
+
+                    BigDecimal rate;
+                    try {
+                        rate = new BigDecimal(rateStr);
+                    } catch (NumberFormatException ex) {
+                        continue;
+                    }
+
+                    LocalDate date = dates.get(dateIdx);
+                    result.get(date).put(currency, Optional.of(rate));
+                }
+            }
+
+            return result;
+
+        } catch (Exception e) {
+            LOGGER.error("Failed to parse SDMX one-day wildcard response for date {}", e);
+            throw new UpstreamServiceException("Failed to parse SDMX one-day response", e);
+        }
+    }
+
+    private List<LocalDate> extractDates(JsonNode root) {
+        JsonNode obsDims = root.path("data")
+                .path("structure")
+                .path("dimensions")
+                .path("observation");
+
+        if (!obsDims.isArray()) return List.of();
+
+        for (JsonNode dim : obsDims) {
+            if ("TIME_PERIOD".equals(dim.path("id").asText())) {
+                JsonNode values = dim.path("values");
+                if (!values.isArray()) return List.of();
+                List<LocalDate> dates = new ArrayList<>();
+                for (JsonNode v : values) {
+                    String id = v.path("id").asText(null);
+                    if (id != null) dates.add(LocalDate.parse(id));
+                }
+                return dates;
+            }
+        }
+        return List.of();
+    }
+
+    private List<String> extractCurrencyDimInfo(JsonNode root) {
+        JsonNode seriesDims = root.path("data")
+                .path("structure")
+                .path("dimensions")
+                .path("series");
+
+        if (!seriesDims.isArray()) return List.of();
+
+        for (JsonNode dim : seriesDims) {
+            if ("BBK_STD_CURRENCY".equals(dim.path("id").asText())) {
+                int keyPos = dim.path("keyPosition").asInt(-1);
+                JsonNode values = dim.path("values");
+                List<String> codes = new ArrayList<>();
+                if (values.isArray()) {
+                    for (JsonNode v : values) {
+                        String id = v.path("id").asText(null);
+                        if (id != null) codes.add(id);
+                    }
+                }
+                return codes;
+            }
+        }
+        return  List.of();
+    }
+
+    private String resolveCurrencyFromSeriesKey(Integer idx, List<String> info) {
+        if(idx < 0 || idx > info.size())
+            return null;
+        return info.get(idx);
     }
 }
 
