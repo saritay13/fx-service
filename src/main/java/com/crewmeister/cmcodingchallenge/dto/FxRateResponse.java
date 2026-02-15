@@ -1,13 +1,11 @@
 package com.crewmeister.cmcodingchallenge.dto;
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
 
 public record FxRateResponse(
-        LocalDate date,
-        String baseCurrency,
-        String currency,
-        BigDecimal rate,
-        String meaning
-) {}
-
+        int totalCurrencies,
+        List<FxRate> successfulRates,
+        Map<String, String> failures
+) {public int getSuccessCount() { return successfulRates.size(); }
+    public int getFailureCount() { return failures.size(); }}
