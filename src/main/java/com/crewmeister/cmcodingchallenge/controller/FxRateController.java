@@ -14,12 +14,11 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
-import java.util.List;
 
 @RestController()
 @RequestMapping("/api/v1/fx")
 @Validated
-@Tag(name = "FX rate endpoints")
+@Tag(name = "FX Rate API", description = "EUR-based foreign exchange rate endpoints using Bundesbank data")
 public class FxRateController {
 
     private final FxRateService fxRateService;
@@ -33,15 +32,31 @@ public class FxRateController {
     }
 
     @GetMapping("/rates/{date}")
-    @Operation(summary = "Get EUR exchange rate for a currency on a specific day")
+    @Operation(summary = "Get EUR-FX exchange rate for a specific day",
+            description = """
+            Returns all EUR-based rates available on a specific date.  
+                
+            **Behavior:**
+            - If no observations exist for the given date, response includes a **failures.NO_DATA** message
+            - Date must be in the past or present (future dates not allowed)
+            - Rates are expressed as: 1 EUR = X foreign currency
+            """)
     public FxRateResponse getRate(@PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) @PastOrPresent
                                   LocalDate date) {
         return fxRateService.getAllEurFxRatePerDate(date);
     }
 
     @GetMapping("/rates")
-    @Operation(summary = "Get all EUR exchange rates at all available dates as a collection")
-    public List<FxRateSeriesResponse> getRates(
+    @Operation( summary = "Get EUR-FX exchange rates as a time-series collection",
+            description = """
+            Fetches EUR-based exchange-rate series for all available currencies over a date range.
+            
+            **Behavior:**
+            - If **start** and **end** are not provided, the service defaults to the **last N available observations** (configurable, default: 10)
+            - Date ranges are validated against a configurable maximum range (currently 1 year) to prevent excessive data load
+            - Both parameters must be provided together or omitted together
+            """)
+    public FxRateSeriesCollectionResponse getRates(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate end
     ) {

@@ -3,6 +3,7 @@ package com.crewmeister.cmcodingchallenge.service;
 import com.crewmeister.cmcodingchallenge.currency.CurrencyConversionRates;
 import com.crewmeister.cmcodingchallenge.dto.ConversionResponse;
 import com.crewmeister.cmcodingchallenge.dto.FxRate;
+import com.crewmeister.cmcodingchallenge.error.RateNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -13,7 +14,7 @@ import java.time.LocalDate;
 @Service
 public class ConversionService {
 
-    Logger LOGGER = LoggerFactory.getLogger(ConversionService.class);
+    private static Logger LOGGER = LoggerFactory.getLogger(ConversionService.class);
 
     private final FxRateService fxRateService;
 
@@ -24,6 +25,9 @@ public class ConversionService {
     private CurrencyConversionRates getEurFxRates(String currency, LocalDate date) {
         LOGGER.info("Fetching Rates for {} at {} ", currency, date);
         FxRate fxRate = fxRateService.getEurFxRatePerDate(currency, date);
+
+        if(fxRate == null)
+            throw new RateNotFoundException("Rate not available for " + currency + " on " + date);
         return new CurrencyConversionRates(fxRate.rate());
     }
 

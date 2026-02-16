@@ -1,17 +1,21 @@
 package com.crewmeister.cmcodingchallenge.service;
 
 import com.crewmeister.cmcodingchallenge.cache.CurrencyCache;
+import com.crewmeister.cmcodingchallenge.dto.CurrencyInfo;
+import com.crewmeister.cmcodingchallenge.dto.CurrencyListResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.Currency;
 import java.util.List;
+import java.util.Locale;
 
 @Service
 public class CurrencyService {
 
-    Logger LOGGER = LoggerFactory.getLogger(CurrencyService.class);
+    private static Logger LOGGER = LoggerFactory.getLogger(CurrencyService.class);
 
     private final CurrencyCache currencyCache;
     private final BundesbankFxClient bundesbankFxClient;
@@ -23,8 +27,24 @@ public class CurrencyService {
         this.bundesbankFxClient = bundesbankFxClient;
     }
 
-    public List<String> getAllAvailableCurrencies() {
+    public CurrencyListResponse getAllAvailableCurrencies() {
         LOGGER.info("Fetching All available Currencies");
-        return currencyCache.getOrLoad(CACHE_TTL, bundesbankFxClient::fetchAllAvailableCurrencies);
+        List<String> currencyCodes =  currencyCache.getOrLoad(CACHE_TTL, bundesbankFxClient::fetchAllAvailableCurrencies);
+
+        List<CurrencyInfo> currencies = currencyCodes.stream()
+                .map(this::toCurrencyInfo)
+                .toList();
+
+        return new CurrencyListResponse(currencies.size(), currencies);
+    }
+
+    private CurrencyInfo toCurrencyInfo(String code) {
+        try {
+            Currency currency = Currency.getInstance(code);
+            return new CurrencyInfo(code, currency.getDisplayName(Locale.ENGLISH));
+        } catch (IllegalArgumentException ex) {
+            LOGGER.warn("Unknown currency code from upstream: {}", code);
+            return new CurrencyInfo(code, "Unknown currency");
+        }
     }
 }

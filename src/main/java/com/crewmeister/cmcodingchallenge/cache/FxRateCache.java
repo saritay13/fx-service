@@ -1,11 +1,13 @@
 package com.crewmeister.cmcodingchallenge.cache;
 
-import com.crewmeister.cmcodingchallenge.dto.CurrencyDateKey;
-import com.crewmeister.cmcodingchallenge.dto.FxRate;
+import com.crewmeister.cmcodingchallenge.dto.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -19,6 +21,13 @@ public class FxRateCache {
 
     private final ConcurrentMap<CurrencyDateKey, FxRate> cache = new ConcurrentHashMap<>();
     private final ConcurrentMap<LocalDate, List<FxRate>> ratesByDate = new ConcurrentHashMap<>();
+    private final ConcurrentMap<SeriesRangeKey, CachedSeries> seriesByRange = new ConcurrentHashMap<>();
+    private final Clock clock;
+    private static final Duration SERIES_CACHE_TTL = Duration.ofHours(10);
+
+    public FxRateCache(Clock clock) {
+        this.clock = clock;
+    }
 
     public Optional<FxRate> get(CurrencyDateKey key) {
         FxRate v = cache.get(key);
@@ -57,12 +66,30 @@ public class FxRateCache {
         LOGGER.debug("FX cache bulk put for date {} with {} rates", date, rates.size());
     }
 
-    /** Test helper */
-    public void clear() {
-        cache.clear();
-        ratesByDate.clear();
-        LOGGER.debug("FX cache cleared");
+    public Optional<List<FxRateSeriesResponse>> getSeriesByRange(LocalDate start, LocalDate end) {
+        SeriesRangeKey key = new SeriesRangeKey(start, end);
+        CachedSeries cached = seriesByRange.get(key);
+        if (cached == null) {
+            return Optional.empty();
+        }
+
+        if (cached.expiresAt().isBefore(Instant.now(clock))) {
+            seriesByRange.remove(key);
+            return Optional.empty();
+        }
+
+        LOGGER.debug("FX series cache hit: {}", key);
+        return Optional.of(cached.series());
     }
 
+    public void putSeriesByRange(LocalDate start, LocalDate end, List<FxRateSeriesResponse> series) {
+        SeriesRangeKey key = new SeriesRangeKey(start, end);
+        seriesByRange.put(key, new CachedSeries(List.copyOf(series), Instant.now(clock).plus(SERIES_CACHE_TTL)));
+        LOGGER.debug("FX series cache put: {} -> {} series", key, series.size());
+    }
+
+    private record SeriesRangeKey(LocalDate start, LocalDate end) {}
+
+    private record CachedSeries(List<FxRateSeriesResponse> series, Instant expiresAt) {}
 }
 

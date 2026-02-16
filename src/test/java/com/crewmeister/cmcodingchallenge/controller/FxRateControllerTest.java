@@ -23,14 +23,12 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.io.IOException;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
 
 import static com.crewmeister.cmcodingchallenge.constants.BundesbankClientConstants.*;
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
-import static org.hamcrest.Matchers.anything;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.ArgumentMatchers.eq;
@@ -94,7 +92,7 @@ public class FxRateControllerTest {
     @Test
     void getRate_returns503ForUpstreamFailure() throws Exception {
         String date = "2024-01-13";
-        getWireMockWith500Status(CCY, date);
+        getWireMockWith500Status(date);
 
         mockMvc.perform(MockMvcRequestBuilders.get(API_BASE + "/rates/"  + date))
                 .andExpect(status().isServiceUnavailable())
@@ -107,7 +105,7 @@ public class FxRateControllerTest {
         String invalidDate = "15-02-2024";
         mockMvc.perform(MockMvcRequestBuilders.get(API_BASE + "/rates/" + invalidDate))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(HttpStatus.BAD_REQUEST.value()));
+                .andExpect(jsonPath($_STATUS).value(HttpStatus.BAD_REQUEST.value()));
     }
 
 
@@ -116,7 +114,7 @@ public class FxRateControllerTest {
     void convert_returns400ForInvalidDates(String date) throws Exception {
         mockMvcPerformConvert(date, CCY,AMOUNT_100)
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(HttpStatus.BAD_REQUEST.value()))
+                .andExpect(jsonPath($_STATUS).value(HttpStatus.BAD_REQUEST.value()))
                 .andExpect(jsonPath($_MESSAGE, containsString("date")));
     }
 
@@ -154,40 +152,36 @@ public class FxRateControllerTest {
                 .andExpect(status().isOk());
     }
 
+    @Test
+    void convert_whenRateMissing_returns404WithHelpfulMessage() throws Exception {
+        String date = "2024-01-16";
 
-    private ResultActions mockMvcPerformConvert(String date, String currency, String amount) throws Exception {
-        return mockMvc.perform(MockMvcRequestBuilders.get(API_BASE + "/convert")
-                .queryParam("currency", currency)
-                .queryParam("date", date)
-                .queryParam("amount", amount));
+        when(conversionService.convertFxToEur(eq(CCY), eq(LocalDate.parse(date)), eq(new BigDecimal(AMOUNT_100))))
+                .thenThrow(new com.crewmeister.cmcodingchallenge.error.RateNotFoundException("Rate not available for " + CCY + " on " + date));
+
+        mockMvc.perform(MockMvcRequestBuilders.get(API_BASE + "/convert")
+                        .queryParam("currency", CCY)
+                        .queryParam("date", date)
+                        .queryParam("amount", AMOUNT_100))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath($_STATUS).value(HttpStatus.NOT_FOUND.value()))
+                .andExpect(jsonPath($_MESSAGE).value("Rate not available for " + CCY + " on " + date));
     }
 
+    @Test
+    void getRate_whenNoDataReturned_includesFailureMessage() throws Exception {
+        String date = "2024-01-14";
+        String json = getNoObservationSdmxJson(date);
 
-    private void stubRateResponse(String date, String responseBody) {
-        wiremock.stubFor(get(urlPathEqualTo("/rest" + GET_ALL_CURRENCY_PATH.formatted("")))
-                .withQueryParam(START_PERIOD, equalTo(date))
-                .withQueryParam(END_PERIOD, equalTo(date))
-                .willReturn(okJson(responseBody)));
+        stubRateResponse(date, json);
+
+        mockMvc.perform(MockMvcRequestBuilders.get(API_BASE + "/rates/" + date))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalCurrencies").value(0))
+                .andExpect(jsonPath("$.successfulRates", hasSize(0)))
+                .andExpect(jsonPath("$.failures").isNotEmpty());
     }
 
-    private static void getWireMockWith500Status(String ccy, String date) {
-        wiremock.stubFor(get(urlPathEqualTo("/rest" + GET_ALL_CURRENCY_PATH.formatted("")))
-                .withQueryParam(START_PERIOD, equalTo(date))
-                .withQueryParam(END_PERIOD, equalTo(date))
-                .willReturn(aResponse().withStatus(500).withBody("Bundesbank down")));
-    }
-
-    private static String getSingleDaySdmxJson(String date, String rate) throws IOException {
-        return Files.readString(Path.of(MOCK_SDMX_JSON_PATH + "single-day.json")).
-                replace("{{date}}", date)
-                .replace("{{usd_rate}}", rate)
-        .replace("{{gbp_rate}}", rate);
-    }
-
-    private static String getNoObservationSdmxJson(String date) throws IOException {
-        return Files.readString(Path.of(MOCK_SDMX_JSON_PATH + "/single-day-no-observation.json")).
-                replace("{{date}}", date);
-    }
 
     @Test
     void getRates_withStartEnd_returns200() throws Exception {
@@ -218,8 +212,8 @@ public class FxRateControllerTest {
                         .queryParam("currency", "USD")
                         .queryParam("start", "2024-01-15"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(HttpStatus.BAD_REQUEST.value()))
-                .andExpect(jsonPath("$.message").value("Provide both start and end, or neither"));
+                .andExpect(jsonPath($_STATUS).value(HttpStatus.BAD_REQUEST.value()))
+                .andExpect(jsonPath($_MESSAGE).value("Provide both start and end, or neither"));
     }
 
     @Test
@@ -237,7 +231,7 @@ public class FxRateControllerTest {
                         .queryParam("start", "2024-01-16")
                         .queryParam("end", "2024-01-15"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("end must be on/after start"));
+                .andExpect(jsonPath($_MESSAGE).value("end must be on/after start"));
     }
 
     @Test
@@ -256,20 +250,55 @@ public class FxRateControllerTest {
                         .queryParam("start", "15-01-2024")
                         .queryParam("end", "16-01-2024"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(HttpStatus.BAD_REQUEST.value()));
+                .andExpect(jsonPath($_STATUS).value(HttpStatus.BAD_REQUEST.value()));
     }
 
     @Test
     void getRates_upstreamFails_returns503() throws Exception {
-        wiremock.stubFor(get(urlPathEqualTo("/rest" + GET_ALL_CURRENCY_PATH.formatted("USD")))
-                .withQueryParam(LAST_N_OBSERVATIONS, equalTo("365"))
+        wiremock.stubFor(get(urlPathEqualTo("/rest" + GET_ALL_CURRENCY_PATH.formatted("")))
                 .withQueryParam(DETAIL_PARAM, equalTo(DATA_ONLY))
+                .withQueryParam(START_PERIOD, matching(".*"))
+                .withQueryParam(END_PERIOD, matching(".*"))
                 .willReturn(aResponse().withStatus(500)));
 
         mockMvc.perform(MockMvcRequestBuilders.get(API_BASE + "/rates")
                         .queryParam("currency", "USD"))
                 .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.status").value(HttpStatus.SERVICE_UNAVAILABLE.value()));
+                .andExpect(jsonPath($_STATUS).value(HttpStatus.SERVICE_UNAVAILABLE.value()));
+    }
+
+
+    private void stubRateResponse(String date, String responseBody) {
+        wiremock.stubFor(get(urlPathEqualTo("/rest" + GET_ALL_CURRENCY_PATH.formatted("")))
+                .withQueryParam(START_PERIOD, equalTo(date))
+                .withQueryParam(END_PERIOD, equalTo(date))
+                .willReturn(okJson(responseBody)));
+    }
+
+    private static void getWireMockWith500Status(String date) {
+        wiremock.stubFor(get(urlPathEqualTo("/rest" + GET_ALL_CURRENCY_PATH.formatted("")))
+                .withQueryParam(START_PERIOD, equalTo(date))
+                .withQueryParam(END_PERIOD, equalTo(date))
+                .willReturn(aResponse().withStatus(500).withBody("Bundesbank down")));
+    }
+
+    private static String getSingleDaySdmxJson(String date, String rate) throws IOException {
+        return Files.readString(Path.of(MOCK_SDMX_JSON_PATH + "single-day.json")).
+                replace("{{date}}", date)
+                .replace("{{usd_rate}}", rate)
+                .replace("{{gbp_rate}}", rate);
+    }
+
+    private static String getNoObservationSdmxJson(String date) throws IOException {
+        return Files.readString(Path.of(MOCK_SDMX_JSON_PATH + "/single-day-no-observation.json")).
+                replace("{{date}}", date);
+    }
+
+    private ResultActions mockMvcPerformConvert(String date, String currency, String amount) throws Exception {
+        return mockMvc.perform(MockMvcRequestBuilders.get(API_BASE + "/convert")
+                .queryParam("currency", currency)
+                .queryParam("date", date)
+                .queryParam("amount", amount));
     }
 
 }

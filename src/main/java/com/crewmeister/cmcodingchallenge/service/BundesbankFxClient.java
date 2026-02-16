@@ -1,7 +1,5 @@
 package com.crewmeister.cmcodingchallenge.service;
 
-import com.crewmeister.cmcodingchallenge.dto.FxRate;
-import com.crewmeister.cmcodingchallenge.dto.FxRatePoint;
 import com.crewmeister.cmcodingchallenge.error.RateNotFoundException;
 import com.crewmeister.cmcodingchallenge.error.UpstreamServiceException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -14,15 +12,11 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
-import javax.swing.text.html.Option;
 import java.math.BigDecimal;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.util.*;
-import java.util.stream.Collectors;
 
 import static com.crewmeister.cmcodingchallenge.constants.BundesbankClientConstants.*;
-import static com.crewmeister.cmcodingchallenge.service.FxRateService.EUR;
 
 @Component
 public class BundesbankFxClient {
@@ -39,7 +33,7 @@ public class BundesbankFxClient {
     }
 
     public List<String> fetchAllAvailableCurrencies() {
-        String path = GET_ALL_CURRENCY_PATH.formatted("");;
+        String path = GET_ALL_CURRENCY_PATH.formatted("");
         try {
             String response = restClient.get()
                     .uri(uriBuilder -> uriBuilder
@@ -86,6 +80,11 @@ public class BundesbankFxClient {
             return rate;
 
         } catch (RestClientResponseException ex) {
+            if (isNoDataResponse(ex)) {
+                LOGGER.info("Bundesbank returned no data (status={}, currency={}, date={})",
+                        ex.getRawStatusCode(), currency, date);
+                return Optional.empty();
+            }
             LOGGER.error("Bundesbank HTTP error (status={}, currency={}, date={})",
                     ex.getRawStatusCode(), currency, date, ex);
             throw new UpstreamServiceException("Bundesbank API returned HTTP " + ex.getRawStatusCode(), ex);
@@ -122,6 +121,10 @@ public class BundesbankFxClient {
             return rates;
 
         } catch (RestClientResponseException ex) {
+            if (isNoDataResponse(ex)) {
+                LOGGER.info("Bundesbank returned no data (status={}, date={})", ex.getRawStatusCode(), date);
+                return Map.of();
+            }
             LOGGER.error("Bundesbank HTTP error (status={}, date={})",
                     ex.getRawStatusCode(), date, ex);
             throw new UpstreamServiceException("Bundesbank API returned HTTP " + ex.getRawStatusCode(), ex);
@@ -152,8 +155,18 @@ public class BundesbankFxClient {
             }
 
             return extractAllCurrencyRatesFromSdmxAllDay(json);
-        }catch (RestClientException ex) {
-            LOGGER.error("Bundesbank network/client error (currency={}, start={}, end={} )", start,end,  ex);
+        }catch (RestClientResponseException ex) {
+            if (isNoDataResponse(ex)) {
+                LOGGER.info("Bundesbank returned no data (status={}, start={}, end={})",
+                        ex.getRawStatusCode(), start, end);
+                return Map.of();
+            }
+            LOGGER.error("Bundesbank HTTP error (status={}, start={}, end={})",
+                    ex.getRawStatusCode(), start, end, ex);
+            throw new UpstreamServiceException("Bundesbank API returned HTTP " + ex.getRawStatusCode(), ex);
+
+        } catch (RestClientException ex) {
+            LOGGER.error("Bundesbank network/client error (start={}, end={})", start, end, ex);
             throw new UpstreamServiceException("Failed to call Bundesbank API", ex);
         }
 
@@ -214,12 +227,10 @@ public class BundesbankFxClient {
             String firstSeriesKey = seriesNode.fieldNames().hasNext() ? seriesNode.fieldNames().next() : null;
             if (firstSeriesKey == null) {
                 return Optional.empty();
-                //throw new RateNotFoundException("Rate not available for " + currency + " on " + date);
             }
 
             JsonNode observations = seriesNode.path(firstSeriesKey).path("observations");
             if (!observations.isObject()) {
-                //return Optional.empty();
                 throw new UpstreamServiceException("Unexpected SDMX structure: observations missing");
             }
 
@@ -227,7 +238,6 @@ public class BundesbankFxClient {
             String firstObservationKey = observations.fieldNames().hasNext() ? observations.fieldNames().next() : null;
             if (firstObservationKey == null) {
                 return  Optional.empty();
-                //throw new RateNotFoundException("Rate not available for " + currency + " on " + date);
             }
 
             JsonNode observationList = observations.path(firstObservationKey);
@@ -235,17 +245,14 @@ public class BundesbankFxClient {
             String rateAsString = observationList.path(0).asText(null);
             if (rateAsString == null || rateAsString.isBlank()) {
                 return Optional.empty();
-                //throw new RateNotFoundException("Rate not available for " + currency + " on " + date);
             }
 
             return Optional.of(new BigDecimal(rateAsString));
 
         } catch (RateNotFoundException e) {
             return Optional.empty();
-            //throw e;
         } catch (Exception e) {
             LOGGER.error(e.getMessage());
-            //return Optional.empty();
             throw new UpstreamServiceException("Failed to parse SDMX rate response for currency " + currency, e);
         }
     }
@@ -460,10 +467,15 @@ public class BundesbankFxClient {
     }
 
     private String resolveCurrencyFromSeriesKey(Integer idx, List<String> info) {
-        if(idx < 0 || idx > info.size())
+        if(idx < 0 || idx >= info.size())
             return null;
         return info.get(idx);
     }
+
+    private boolean isNoDataResponse(RestClientResponseException ex) {
+        return ex.getRawStatusCode() == 404;
+    }
+
 }
 
 

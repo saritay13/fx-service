@@ -5,9 +5,9 @@
 - **ChatGPT (OpenAI)** – used as a conversational assistant for:
    - Understanding the Bundesbank FX API (SDMX)
    - Interpreting request/response structures
-   - Designing API flows, caching strategies, and domain models
+   - Designing API flows, caching strategy, and domain models
 
-No code was blindly copy-pasted. All suggestions were reviewed, adapted, and implemented manually.
+No code was blindly copy-pasted. All suggestions were reviewed, adapted, and implemented.
 
 ---
 
@@ -25,16 +25,16 @@ https://api.statistiken.bundesbank.de/rest/data/{FLOW_REF}/{SERIES_KEY}
 
 Examples:
 
-Fetch all daily EUR-FX rates for USD:
+Fetch all daily EUR-FX rates for All currency:
 ```
 curl -H "Accept: application/vnd.sdmx.data+json;version=1.0.0" \
-"https://api.statistiken.bundesbank.de/rest/data/BBEX3/D.USD.EUR.BB.AC.000"
+"https://api.statistiken.bundesbank.de/rest/data/BBEX3/D..EUR.BB.AC.000?detail=dataonly"
 ```
 
 Fetch rates for a specific day:
 ```
 curl -H "Accept: application/vnd.sdmx.data+json;version=1.0.0" \
-"https://api.statistiken.bundesbank.de/rest/data/BBEX3/D.USD.EUR.BB.AC.000?startPeriod=2024-01-15&endPeriod=2024-01-15"
+"https://api.statistiken.bundesbank.de/rest/data/BBEX3/D..EUR.BB.AC.000?startPeriod=2024-01-15&endPeriod=2024-01-15"
 ```
 
 ### Reasoning
@@ -113,8 +113,18 @@ curl -H "Accept: application/vnd.sdmx.data+json;version=1.0.0" \
  - For simplicity, Uses an in-memory cache keyed by (currency, date) to avoid repeated calls to the Bundesbank API.
  - For production, a persistent store combined with caching would be preferred to ensure durability and scalability.
 
-- sample response from Bundesbank
+### Endpoint Used
+```
+curl -H "Accept: application/vnd.sdmx.data+json;version=1.0.0" \
+"https://api.statistiken.bundesbank.de/rest/data/BBEX3/D..EUR.BB.AC.000?startPeriod=2024-01-15&endPeriod=2024-01-15&detail=dataonly"
+```
+![findAllCcyRateByDate.png](findAllCcyRateByDate.png)
+### below is being used to fetch per currency for converting amount if the rate is not found in cache
 
+```
+curl -H "Accept: application/vnd.sdmx.data+json;version=1.0.0" \
+"https://api.statistiken.bundesbank.de/rest/data/BBEX3/D.USD.EUR.BB.AC.000?startPeriod=2024-01-15&endPeriod=2024-01-15&detail=dataonly"
+```
 ![GetARatePerDate.png](GetARatePerDate.png)
 
 ---
@@ -151,14 +161,17 @@ Limit requests to a maximum of **5 years**, keeping responses under ~5–10 MB a
 
 ### Example External API Call
 
-```bash
-curl -H "Accept: application/vnd.sdmx.data+json;version=1.0.0" \
-"https://api.statistiken.bundesbank.de/rest/data/BBEX3/D.USD.EUR.BB.AC.000?detail=dataonly&lastNObservations=365"
+
+### Endpoint Used
 ```
+curl -H "Accept: application/vnd.sdmx.data+json;version=1.0.0" \
+"https://api.statistiken.bundesbank.de/rest/data/BBEX3/D..EUR.BB.AC.000?startPeriod=2024-01-15&endPeriod=2024-01-15&detail=dataonly"
+```
+
 
 #### Sample Response
 
-![GetByRange.png](GetByRange.png)
+![findAllCcyRatesByDateRange.png](findAllCcyRatesByDateRange.png)
 
 ### Final Decision
 - For this challenge:
@@ -183,18 +196,7 @@ Apart from designing the APIs, AI prompts were actively used during development 
 
 The prompts were intentionally framed to guide the AI toward **production-like and defensive coding practices.**
 
-### Future Enhancements
-While the current implementation meets the functional and non-functional requirements of this challenge, 
-there is **significant scope for refactoring and hardening**, including but not limited to:
 
-- Improved cache eviction strategies
-- Better abstraction and separation of concerns
-- More comprehensive error classification
-- Externalize error messages into shared constants
-- Add unit tests for individual components (cache, client, services)
-- Persist FX rates in a database (e.g., PostgreSQL)
-- Add pagination for large time-series responses
-- Introduce retry & timeout logic for Bundesbank API calls
 
 
 

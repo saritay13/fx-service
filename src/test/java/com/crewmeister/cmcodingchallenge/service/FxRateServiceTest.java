@@ -1,10 +1,8 @@
 package com.crewmeister.cmcodingchallenge.service;
 
 import com.crewmeister.cmcodingchallenge.cache.FxRateCache;
-import com.crewmeister.cmcodingchallenge.dto.CurrencyDateKey;
-import com.crewmeister.cmcodingchallenge.dto.FxRate;
-import com.crewmeister.cmcodingchallenge.dto.FxRateResponse;
-import com.crewmeister.cmcodingchallenge.dto.FxRateSeriesResponse;
+import com.crewmeister.cmcodingchallenge.dto.*;
+import com.crewmeister.cmcodingchallenge.error.RateNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -21,7 +19,6 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -44,7 +41,7 @@ public class FxRateServiceTest {
     @BeforeEach
     void setUp() {
         fixedClock = Clock.fixed(Instant.parse("2024-01-10T10:15:30Z"), ZoneOffset.UTC);
-        service = new FxRateService(cache, client, fixedClock, currencyService);
+        service = new FxRateService(cache, client, fixedClock);
     }
 
     static List<Arguments> eurFxRate_cases_cacheMiss_clientReturnsRate() {
@@ -155,6 +152,28 @@ public class FxRateServiceTest {
     }
 
     @ParameterizedTest
+    @MethodSource("allEurFxRate_cases_emptyResponse")
+    void getAllEurFxRatePerDate_whenUpstreamReturnsNoRows_returnsFailureMessage(LocalDate date) {
+        when(cache.getByDate(date)).thenReturn(Optional.empty());
+        when(client.fetchAllEurFxRateOnParticularDay(date)).thenReturn(Map.of());
+
+        FxRateResponse response = service.getAllEurFxRatePerDate(date);
+
+        assertEquals(0, response.getSuccessCount());
+        assertEquals(1, response.getFailureCount());
+        assertEquals("No EUR-FX rates available for date " + date, response.failures().get("NO_DATA"));
+        verify(cache).putByDate(eq(date), anyList());
+    }
+
+    static Stream<Arguments> allEurFxRate_cases_emptyResponse() {
+        return Stream.of(
+                Arguments.of(LocalDate.of(2024, 1, 20)),
+                Arguments.of(LocalDate.of(2024, 3, 1))
+        );
+    }
+
+
+    @ParameterizedTest
     @MethodSource("getSeriesByRange_simpleCases")
     void getSeriesByRange_returnsSeries_andCallsClient(
             LocalDate start,
@@ -166,13 +185,13 @@ public class FxRateServiceTest {
         when(client.fetchEurFxSeriesByRange(start, end)).thenReturn(clientResponse);
 
         // when
-        List<FxRateSeriesResponse> result = service.getSeriesByRange(start, end);
+        FxRateSeriesCollectionResponse result = service.getSeriesByRange(start, end);
 
         // then
-        assertNotNull(result);
-        assertEquals(expectedSeriesCount, result.size());
+        assertNotNull(result.series());
+        assertEquals(expectedSeriesCount, result.series().size());
 
-        FxRateSeriesResponse series = result.get(0);
+        FxRateSeriesResponse series = result.series().get(0);
         assertEquals(FxRateService.EUR, series.baseCurrency());
         assertEquals(start, series.start());
         assertEquals(end, series.end());
@@ -181,5 +200,46 @@ public class FxRateServiceTest {
 
         verify(client).fetchEurFxSeriesByRange(start, end);
     }
+
+    @ParameterizedTest
+    @MethodSource("lastNSeriesRanges")
+    void getLastNSeries_usesClockAndBuildsInclusiveRange(int lastN, LocalDate expectedStart, LocalDate expectedEnd) {
+        when(client.fetchEurFxSeriesByRange(expectedStart, expectedEnd)).thenReturn(Map.of());
+
+        FxRateSeriesCollectionResponse result = service.getLastNSeries(lastN);
+
+        assertTrue(result.series().isEmpty());
+        verify(client).fetchEurFxSeriesByRange(expectedStart, expectedEnd);
+    }
+
+    static Stream<Arguments> lastNSeriesRanges() {
+        return Stream.of(
+                Arguments.of(1, LocalDate.of(2024, 1, 10), LocalDate.of(2024, 1, 10)),
+                Arguments.of(3, LocalDate.of(2024, 1, 8), LocalDate.of(2024, 1, 10))
+        );
+    }
+
+    @ParameterizedTest
+    @MethodSource("eurFxRate_cases_clientNoRate")
+    void getEurFxRatePerDate_cacheMiss_clientHasNoRate_throwsRateNotFound(String currency, LocalDate date) {
+        CurrencyDateKey key = new CurrencyDateKey(currency, date);
+
+        when(cache.get(key)).thenReturn(Optional.empty());
+        when(client.fetchEurFxRateOnParticularDay(currency, date)).thenReturn(Optional.empty());
+
+        assertThrows(RateNotFoundException.class, () -> service.getEurFxRatePerDate(currency, date));
+
+        verify(client).fetchEurFxRateOnParticularDay(currency, date);
+    }
+
+    static Stream<Arguments> eurFxRate_cases_clientNoRate() {
+        return Stream.of(
+                Arguments.of("USD", LocalDate.of(2024, 1, 11)),
+                Arguments.of("GBP", LocalDate.of(2024, 2, 6))
+        );
+    }
+
+
+
 
 }

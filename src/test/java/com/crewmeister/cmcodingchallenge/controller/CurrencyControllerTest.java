@@ -22,6 +22,7 @@ import static com.crewmeister.cmcodingchallenge.constants.BundesbankClientConsta
 import static com.crewmeister.cmcodingchallenge.constants.BundesbankClientConstants.SERIES_KEY_ONLY;
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
+import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -58,7 +59,8 @@ public class CurrencyControllerTest {
 
         mockMvc.perform(MockMvcRequestBuilders.get(API_BASE+ "/currencies"))
                 .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath($_STATUS).value(HttpStatus.SERVICE_UNAVAILABLE.value()));
+                .andExpect(jsonPath($_STATUS).value(HttpStatus.SERVICE_UNAVAILABLE.value()))
+                .andExpect(jsonPath("$.error").value("Upstream service error"));;
     }
 
     @Test
@@ -69,7 +71,8 @@ public class CurrencyControllerTest {
 
         mockMvc.perform(MockMvcRequestBuilders.get(API_BASE+ "/currencies"))
                 .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath($_STATUS).value(HttpStatus.SERVICE_UNAVAILABLE.value()));
+                .andExpect(jsonPath($_STATUS).value(HttpStatus.SERVICE_UNAVAILABLE.value()))
+                .andExpect(jsonPath("$.error").value("Upstream service error"));;
     }
 
     @Test
@@ -82,13 +85,14 @@ public class CurrencyControllerTest {
 
         mockMvc.perform(MockMvcRequestBuilders.get(API_BASE+ "/currencies"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$").isArray())
-                .andExpect(jsonPath("$[0]").isString());
+                .andExpect(jsonPath("$.count").value(4))
+                .andExpect(jsonPath("$.currencies", hasSize(4)))
+                .andExpect(jsonPath("$.currencies[0].code").value("CHF"))
+                .andExpect(jsonPath("$.currencies[0].name").value("Swiss Franc"));
 
         mockMvc.perform(MockMvcRequestBuilders.get(API_BASE+ "/currencies"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$").isArray())
-                .andExpect(jsonPath("$[0]").isString());
+                .andExpect(jsonPath("$.count").value(4));
 
         wiremock.verify(1,
                 getRequestedFor(urlPathEqualTo("/rest" + GET_ALL_CURRENCY_PATH.formatted("")))
